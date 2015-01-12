@@ -447,7 +447,7 @@ end
 
 # Calculate the log-likelihood for the ODE model
 #try
-    Sol = Sundials.cvode((t,y,ydot)->Model.ODEFunction(t,y,ydot,Chain.Geometry[PropNum].Parameters), Model.DefaultInitialConditions, Model.DataTimePoints[:,1], Model.reltol, Model.abstol)
+    Sol = Sundials.cvode((t,y,ydot)->Model.ODEFunction(t,y,ydot,Chain.Geometry[PropNum].Parameters), Model.DefaultInitialConditions, Model.DataTimePoints[:,1], reltol=Model.reltol, abstol=Model.abstol)
     #Sol = ode23((t,x)->Model.ODEFunction(t,x,zeros(Model.NumOfSpecies),Chain.Geometry[PropNum].Parameters), Model.DefaultInitialConditions, Model.DataTimePoints[:,1])
     #println(typeof(Sol))
   #catch
@@ -478,7 +478,7 @@ if CalculateGradLL
         NewParas[i]  = NewParas[i] + Epsilon
         True_Epsilon = NewParas[i] - Chain.Geometry[PropNum].Parameters[i]
 
-        Sol_fd[:,:,i] = Sundials.cvode((t,y,ydot)->Model.ODEFunction(t,y,ydot,NewParas), Model.DefaultInitialConditions, Model.DataTimePoints[:,1], Model.reltol, Model.abstol)
+        Sol_fd[:,:,i] = Sundials.cvode((t,y,ydot)->Model.ODEFunction(t,y,ydot,NewParas), Model.DefaultInitialConditions, Model.DataTimePoints[:,1], reltol=Model.reltol, abstol=Model.abstol)
         #Sol_fd[:,:,i] = ode23((t,x)->Model.ODEFunction(t,x,zeros(Model.NumOfSpecies),NewParas), Model.DefaultInitialConditions, Model.DataTimePoints[:,1])
         Sol_fd[:,:,i] = (Sol_fd[:,:,i] - Sol)./True_Epsilon
 
@@ -589,7 +589,7 @@ end
 
 # Calculate the log-likelihood for the ODE model
 #try
-    Sol = Sundials.cvode((t,y,ydot)->Model.ODEFunction(t,y,ydot,Chain.Geometry[PropNum].Parameters), Model.DefaultInitialConditions, Model.DataTimePoints[:,1], Model.reltol, Model.abstol)
+    Sol = Sundials.cvode((t,y,ydot)->Model.ODEFunction(t,y,ydot,Chain.Geometry[PropNum].Parameters), Model.DefaultInitialConditions, Model.DataTimePoints[:,1], reltol=Model.reltol, abstol=Model.abstol)
     #println(length(Model.DataTimePoints[:,1]))
     #Sol = ode23((t,x)->Model.ODEFunction(t,x,zeros(Model.NumOfSpecies),Chain.Geometry[PropNum].Parameters), Model.DataTimePoints[:,1], Model.DefaultInitialConditions)
     #println(length(Sol[2][:]))
@@ -628,7 +628,7 @@ if CalculateGradLL
         NewParas[i]  = NewParas[i] + Epsilon
         True_Epsilon = NewParas[i] - Chain.Geometry[PropNum].Parameters[i]
 
-        Sol_fd[:,:,i] = Sundials.cvode((t,y,ydot)->Model.ODEFunction(t,y,ydot,NewParas), Model.DefaultInitialConditions, Model.DataTimePoints[:,1], Model.reltol, Model.abstol)
+        Sol_fd[:,:,i] = Sundials.cvode((t,y,ydot)->Model.ODEFunction(t,y,ydot,NewParas), Model.DefaultInitialConditions, Model.DataTimePoints[:,1], reltol=Model.reltol, abstol=Model.abstol)
         Sol_fd[:,:,i] = (Sol_fd[:,:,i] - Sol)./True_Epsilon
         #Sol_fd = ode23((t,x)->Model.ODEFunction(t,x,zeros(Model.NumOfSpecies),NewParas), Model.DefaultInitialConditions, Model.DataTimePoints[:,1])
         #Sol_fd[2] = (Sol_fd[2] - Sol[2])./True_Epsilon
