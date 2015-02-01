@@ -1,14 +1,13 @@
-function UpdateParameters(Model::TargetOnlyModel, Chain::MarkovChain)
+function UpdateParameters(Model::IONModel, Chain::MarkovChain , Data::Dict{Any,Any} = Dict())
 
 if Chain.Initialised
-
     if Chain.Sampler == "MH"
         ### Standard Metropolis-Hastings sampler ###
 
-        #println("Entering UpdateParameters function...")
+        println(Chain.Sampler)
+        println("Entering UpdateParameters function...")
         ProposalMean       = Chain.Geometry[Chain.SampleIndicator].Parameters
-        ProposalCovariance = Chain.Proposal.StepSize*Chain.Proposal.ProposalCovariance
-
+        ProposalCovariance = Chain.ProposalDistribution.StepSize*Chain.ProposalDistribution.ProposalCov
         # Propose the new parameters values
         for j = 1:Chain.NumOfProposals+1
             # Update for all except the indicated sample
@@ -26,7 +25,18 @@ if Chain.Initialised
 
                 # Then update the geometry for all proposed points
                 #println("Updating geometry for proposed point...")
-                Chain.Geometry[j].LL = Model.LLEval( Chain.Geometry[j].Parameters, Model )
+                if Model.UsePrior
+                    for k = 1:Model.NumOfParas
+                        Chain.Geometry[j].LogPrior += logpdf(Model.Priors[k], Chain.Geometry[j].Parameters[k])
+                    end
+                end
+                
+                if isinf(Chain.Geometry[j].LogPrior)
+                    #println("Proposed parameter outside prior")
+                    Chain.Geometry[j].LL = -1e200
+                else
+                    Chain.Geometry[j].LL = Model.LLEval( Chain.Geometry[j].Parameters, Model, Data ) + Chain.Geometry[j].LogPrior
+                end
             end
         end
 
@@ -47,21 +57,88 @@ if Chain.Initialised
                     end
                 end
             end
+        end
+    elseif Chain.Sampler == "AdaptiveMH"
+        # Code for other samplers
+        CurIter = Chain.CurrentIteration;
 
+        # Update the proposal mean and covariance
+        if CurIter == 1
+            Chain.ProposalDistribution.RunningCov  = (1/CurIter)*(Chain.Geometry[Chain.SampleIndicator].Parameters-Chain.ProposalDistribution.RunningMean)*(Chain.Geometry[Chain.SampleIndicator].Parameters-Chain.ProposalDistribution.RunningMean)';
+            Chain.ProposalDistribution.RunningMean = ((CurIter-1)*Chain.ProposalDistribution.RunningMean + Chain.Geometry[Chain.SampleIndicator].Parameters)/CurIter;
+            Chain.ProposalDistribution.Density     = MvNormal(zeros(Model.NumOfParas),
+                                                              eye(Model.NumOfParas)*(Chain.ProposalDistribution.StepSize^2))
+        else
+            Chain.ProposalDistribution.RunningCov  = ((CurIter-2)/(CurIter-1))*Chain.ProposalDistribution.RunningCov + (1/CurIter)*(Chain.Geometry[Chain.SampleIndicator].Parameters-Chain.ProposalDistribution.RunningMean)*(Chain.Geometry[Chain.SampleIndicator].Parameters-Chain.ProposalDistribution.RunningMean)';
+            Chain.ProposalDistribution.RunningMean = ((CurIter-1)*Chain.ProposalDistribution.RunningMean + Chain.Geometry[Chain.SampleIndicator].Parameters)/CurIter;
+            Chain.ProposalDistribution.Density     = MvNormal(zeros(Model.NumOfParas),
+                                                              Chain.ProposalDistribution.RunningCov + eye(Model.NumOfParas)*(Chain.ProposalDistribution.StepSize^2))
+        end
+        if CurIter % 100 == 0
+            println(Chain.ProposalDistribution.RunningCov)
         end
 
-    else
-        # Code for other samplers
+        # Propose the new parameters values
+        for PropNum = 1:Chain.NumOfProposals+1
+            # Update for all except the indicated sample
+            if PropNum != Chain.SampleIndicator
 
+                # Propose new point
+                #println("Proposing new point...")
+                if Model.NumOfParas == 1
+                    # 1 dimensional case
+                    Chain.Geometry[PropNum].Parameters[1] = Chain.introspectionGeometry[Chain.SampleIndicator].Parameters[1] + rand(Chain.ProposalDistribution.Density)
+                else
+                    # Multi-dimensional case
+                    Chain.Geometry[PropNum].Parameters    = Chain.Geometry[Chain.SampleIndicator].Parameters + rand(Chain.ProposalDistribution.Density) # using same proposal
+                end
+                # Then update the geometry for all proposed points
+                #println("Updating geometry for proposed point...")
+                Chain.Geometry[PropNum].LogPrior = 0
+                if Model.UsePrior
+                    for k = 1:Model.NumOfParas
+                        Chain.Geometry[PropNum].LogPrior += logpdf(Model.Priors[k], Chain.Geometry[PropNum].Parameters[k])
+
+                        # If the proposed parameter has zero prior probability mass then exit
+                    end
+                end
+                #println(string("Log-Prior is ",  Chain.Geometry[PropNum].LogPrior))
+                if isinf(Chain.Geometry[PropNum].LogPrior)
+                    #println(string("Proposed parameters outside prior -> " ,  Chain.Geometry[PropNum].Parameters))
+                    Chain.Geometry[PropNum].LL = -1e200
+                else
+                    Chain.Geometry[PropNum].LL = Model.LLEval( Chain.Geometry[PropNum].Parameters, Model, Data ) + Chain.Geometry[PropNum].LogPrior
+                end
+ 
+            end
+        end
     end
-
 else
     # Initialise the chain by updating geometry for main point
     if Chain.Sampler == "MH"
 
         println("Initialising...")
         println("The chosen sampler is Metropolis-Hastings.")
-        Chain.Geometry[Chain.SampleIndicator].LL = Model.LLEval( Chain.Geometry[Chain.SampleIndicator].Parameters, Model )
+        Chain.Geometry[Chain.SampleIndicator].LogPrior = 0
+        if Model.UsePrior
+            for k = 1:Model.NumOfParas
+                Chain.Geometry[Chain.SampleIndicator].LogPrior += logpdf(Model.Priors[k], Chain.Geometry[Chain.SampleIndicator].Parameters[k])
+            end
+        end
+
+        Chain.Geometry[Chain.SampleIndicator].LL = Model.LLEval( Chain.Geometry[Chain.SampleIndicator].Parameters, Model, Data ) + Chain.Geometry[Chain.SampleIndicator].LogPrior
+
+    elseif Chain.Sampler == "AdaptiveMH"
+        println("Initialising...")
+        println("The chosen sampler is Adaptive Metropolis-Hastings.")
+        Chain.Geometry[Chain.SampleIndicator].LogPrior = 0
+        if Model.UsePrior
+            for k = 1:Model.NumOfParas
+                Chain.Geometry[Chain.SampleIndicator].LogPrior += logpdf(Model.Priors[k], Chain.Geometry[Chain.SampleIndicator].Parameters[k])
+            end
+        end
+
+        Chain.Geometry[Chain.SampleIndicator].LL = Model.LLEval( Chain.Geometry[Chain.SampleIndicator].Parameters, Model, Data ) + Chain.Geometry[Chain.SampleIndicator].LogPrior
 
     elseif Chain.Sampler == "MALA"
 
@@ -313,7 +390,7 @@ if Chain.Initialised
                 #println("Proposing new point...")
                 if Model.NumOfParas == 1
                     # 1 dimensional case
-                    Chain.Geometry[PropNum].Parameters[1] = Chain.Geometry[Chain.SampleIndicator].Parameters[1] + rand(Chain.ProposalDistribution.Density)
+                    Chain.Geometry[PropNum].Parameters[1] = Chain.introspectionGeometry[Chain.SampleIndicator].Parameters[1] + rand(Chain.ProposalDistribution.Density)
                 else
                     # Multi-dimensional case
                     Chain.Geometry[PropNum].Parameters    = Chain.Geometry[Chain.SampleIndicator].Parameters + rand(Chain.ProposalDistribution.Density) # using same proposal
@@ -589,7 +666,7 @@ end
 
 # Calculate the log-likelihood for the ODE model
 #try
-    Sol = Sundials.cvode((t,y,ydot)->Model.ODEFunction(t,y,ydot,Chain.Geometry[PropNum].Parameters), Model.DefaultInitialConditions, Model.DataTimePoints[:,1], reltol=Model.reltol, abstol=Model.abstol)
+    Sol = Sundials.cvode((t,y,ydot)->Model.ODEFunctionntrospection(t,y,ydot,Chain.Geometry[PropNum].Parameters), Model.DefaultInitialConditions, Model.DataTimePoints[:,1], reltol=Model.reltol, abstol=Model.abstol)
     #println(length(Model.DataTimePoints[:,1]))
     #Sol = ode23((t,x)->Model.ODEFunction(t,x,zeros(Model.NumOfSpecies),Chain.Geometry[PropNum].Parameters), Model.DataTimePoints[:,1], Model.DefaultInitialConditions)
     #println(length(Sol[2][:]))

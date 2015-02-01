@@ -61,7 +61,6 @@ if Sampler == "MH"
 
     # Create proposal distribution object for MH
     ProposalDistribution = ProposalDistributionMH(Density, StepSize, MySimulation.ProposalCovariance)
-
 elseif Sampler == "SmMALA"  || Sampler == "TrSmMALA"
 
     # Set the proposal distribution for each of these samplers
@@ -142,14 +141,14 @@ Chain = MarkovChain( Sampler,
 
 
 # Initialise the LL and any other quantities needed for the chosen sampler
-MySimulation.UpdateParameters(MySimulation.Model, Chain)
+MySimulation.UpdateParameters(MySimulation.Model, Chain, MySimulation.Data)
 
 # Initialise variable for storing results
 #SavedSamples = Array(Float64, MySimulation.Model.NumOfParas, (MySimulation.NumOfIterations*Chain.NumOfProposals))
 TotalNumOfSamples = MySimulation.NumOfIterations*Chain.NumOfProposals;
 SaveIteration = min(100000, TotalNumOfSamples)
 SavedSamples = Array(Float64, MySimulation.Model.NumOfParas, SaveIteration)
-
+SavedLL = Array(Float64, SaveIteration)
 ################
 # Main routine #
 ################
@@ -161,7 +160,7 @@ for IterationNum = 1:MySimulation.NumOfIterations
 
     #println(IterationNum)
 
-    if mod(IterationNum, 1000) == 0
+    if mod(IterationNum, 100) == 0
         println(IterationNum)
 
         # Calculate acceptance rate
@@ -174,10 +173,12 @@ for IterationNum = 1:MySimulation.NumOfIterations
 
         # Print acceptance rate
         println(Counter/(Idx-1))
+        println(string("LL = " , SavedLL[IterationNum-1]))
+        println("Param values ", join(SavedSamples[:,IterationNum-1] , ","))
     end
 
     # Propose parameters and caluclate new geometry - Gibbs step 1
-    MySimulation.UpdateParameters(MySimulation.Model, Chain)
+    MySimulation.UpdateParameters(MySimulation.Model, Chain, MySimulation.Data)
 
     # Sample the indicator variable to select samples - Gibbs step 2
     IndicatorSamples = MySimulation.SampleIndicator(MySimulation.Model, Chain)
@@ -191,6 +192,8 @@ for IterationNum = 1:MySimulation.NumOfIterations
         PartNum = IterationNum/SaveIteration;
         Idx = SaveIteration
         SavedSamples[:, Idx] = Chain.Geometry[ IndicatorSamples[1] ].Parameters
+        SavedLL[Idx] =  Chain.Geometry[ IndicatorSamples[1] ].LL
+        println(Chain.Geometry[ IndicatorSamples[1] ].LL)
 
         # Output the results to a file
         writedlm(string(MySimulation.OutputID, "_Part", PartNum), SavedSamples, ',')
@@ -198,10 +201,8 @@ for IterationNum = 1:MySimulation.NumOfIterations
     else
         Idx = mod(IterationNum, SaveIteration);
         SavedSamples[:, Idx] = Chain.Geometry[ IndicatorSamples[1] ].Parameters
+        SavedLL[Idx] =  Chain.Geometry[ IndicatorSamples[1] ].LL
     end
-
-
-
 end
 
 ########################

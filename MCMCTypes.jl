@@ -1,7 +1,37 @@
 module MCMCTypes
 
-export ODEModel, TargetOnlyModel, GaussianBivariate, MarkovChain, MarkovChainGeometry, MarkovChainProposal, MCMCSimulation
+export IONModel, ODEModel, TargetOnlyModel, GaussianBivariate, MarkovChain, MarkovChainGeometry, MarkovChainProposal, MCMCSimulation
 export ProposalDistributionMH, ProposalDistributionSmMALA, ProposalDistributionSmMALARandom, ProposalDistributionAdaptiveMH
+
+# Define the statistical model object
+type IONModel
+    #fields from Target Only Model, acts as interface to MCMCRun.jl
+
+    ModelType
+    ModelName
+    NumOfParas::Int64
+    ParaNames::Array
+    DefaultParas::Array{Float64}
+    UsePrior::Bool
+    Priors::Array{Any} #types from the distribution Pkg
+    LLEval::Function
+
+    #Data
+    #NumberOfConcs::Int64
+    #Concs::Array{Float64} #concentrations at each recording
+    #Burstnos::Array{Int64} # number of bursts in each concentration
+    #BurstLengths::Array{Any} #numberofconcs in length, each index holds an Array{Int64} of the number of intervals in each burst
+    #BurstIntervals::Array{Any} #numberofconcs in length, each index holds an Array{Float64} which are the intervals across all bursts. burstlengths is used to delineate each burst in dcprogs_wrapper
+    #Tres::Array{Float64} #resolution time for each set
+    #Tcrit::Array{Float64} #time interval to delineate bursts
+    #useChs::Array{Bool}   #whether to use CHS vectors for initial occupacies
+
+    #ION specific
+    GenerateQ::Function #generates a Q-matrix which encodes the transition rates of the continuous time Markov process
+    nopen::Int64
+    k::Int64
+
+end
 
 # Define the statistical model object
 type ODEModel
@@ -187,6 +217,9 @@ type MCMCSimulation
 
     # This can be any model, as long as corresponding UpdateParameters function is defined
     Model
+    
+    # This is a Dictionary which the LLEval function in the model needs to understand
+    Data
 
 end
 
