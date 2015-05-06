@@ -39,7 +39,6 @@ function IdealDistribution(Q::Array{Float64,2}, nopen::Int64, k::Int64, isOpen::
         initial = idealg[:final_occupancies]' #returned as a column vector so we need to transpose 
         G = idealg[:fa](t) 
         final = ones(nopen)
-        println(size(initial), size(reshape(G[1,:,:],k-nopen,nopen)), size(final))
         for i=1:length(t)
             density[i] = (initial * reshape(G[i,:,:],k-nopen,nopen) * final)[1]    
         end
@@ -139,9 +138,9 @@ end
 function  dARsds (dcpQ::PyObject,nopen::Int64, nclose::Int64, tres::Float64)
 
     eFFt = expm(dcpQ[:ff]*tres);
-
+    
     #P(sojourn in F states > tres)
-    S_FF = ones(nclose,nclose) - eFFt #s=0
+    S_FF = eye(nclose,nclose) - eFFt #s=0
 
     #P(move to any F | start in any A) %s=0
     G_AF = (-dcpQ[:aa]^-1)*dcpQ[:af]
@@ -149,11 +148,10 @@ function  dARsds (dcpQ::PyObject,nopen::Int64, nclose::Int64, tres::Float64)
     #P(move to any state in A | start in any F) %s=0
     G_FA = (-dcpQ[:ff]^-1)*dcpQ[:fa]
 
+    A1 = (tres * G_AF * (eFFt * G_FA)) - (G_AF * S_FF*(((dcpQ[:ff]^-1) * G_FA))) + ((-(dcpQ[:aa]^-1) * G_AF)*S_FF*G_FA)
 
-    A1 = (tres * G_AF * (eFFt * G_FA)) + (G_AF * S_FF*((dcpQ[:ff]^-1 * G_FA))) + ((-dcpQ[:aa]^-1 * G_AF)*S_FF*G_FA)
-
-    VA = ones(nopen,nopen) - ((G_AF*S_FF)*G_FA)
-    A2 = dcpQ[:aa]^(-1)-(A1*VA^-1);
+    VA = eye(nopen,nopen) - ((G_AF*S_FF)*G_FA)
+    A2 = dcpQ[:aa]^(-1)-(A1*(VA^-1));
     deriv = ((VA^-1) * A2) * dcpQ[:aa]^-1;
 
 end
@@ -169,7 +167,7 @@ function UnivariateConditionalMean(Q::Array{Float64,2}, nopen::Int64, k::Int64, 
 
     KvHi = CumulativeExactSurvivor(Q, nopen, k , isOpen, thi - tres, tres, true) #we want the mean cumulant vK_{A}(t)
     KvLo = CumulativeExactSurvivor(Q, nopen, k , isOpen, tlo - tres, tres, true)
-
+    
     
     if isOpen
         phi = exactg[:initial_occupancies]
@@ -239,7 +237,7 @@ function CumulativeExactSurvivor(Q::Array{Float64,2}, nopen::Int64, k::Int64, is
         for m = 0:convert(Int64,floor(v/tres))
             for r = 0:m
                 if meanCumulSurvivor
-                    cumulant = ((tres* m * iCG(u-(m*tres),lambdas[i+1],r)) + iCG(u-(m*tres),lambdas[i+1],r+1))
+                    cumulant = ((tres* m * iCG(v-(m*tres),lambdas[i+1],r)) + iCG(v-(m*tres),lambdas[i+1],r+1))
                 else
                     cumulant = iCG(v-(m*tres),lambdas[i+1],r)
                 end
@@ -261,10 +259,15 @@ function CumulativeExactSurvivor(Q::Array{Float64,2}, nopen::Int64, k::Int64, is
         else
             components = approxsurvivor[:fa_components]
         end
-
-        for i=1:length(components)
-           timeConstant = -1/components[i][2];
-           Ku=Ku+(components[i][1]*timeConstant*(exp((-2*tres)/timeConstant) - exp(-u/timeConstant))); 
+        if meanCumulSurvivor
+            for i=1:length(components)
+                timeConstant = -1/components[i][2]
+                Ku+=(components[i][1] * timeConstant * (((timeConstant+ (2*tres)) * (exp((-2*tres)/timeConstant))) - ((timeConstant+u) * exp(-u/timeConstant))))
+            end
+        else
+            for i=1:length(components)
+               timeConstant = -1/components[i][2];
+               Ku=Ku+(components[i][1]*timeConstant*(exp((-2*tres)/timeConstant) - exp(-u/timeConstant)));            end
         end
     end
     return Ku

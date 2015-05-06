@@ -48,7 +48,7 @@ println("Setting up Markov chain proposal...")
 
 StepSize = MySimulation.InitialStepSize
 
-if Sampler == "MH"
+if Sampler == "MH" || Sampler == "MultMH"
 
     # Set the proposal distribution for each of these samplers
     if MySimulation.Model.NumOfParas == 1
@@ -109,7 +109,7 @@ elseif Sampler == "AdaptiveMH"
     end
 
     RunningMean = zeros(MySimulation.Model.NumOfParas)
-    RunningCov  = zeros(MySimulation.Model.NumOfParas)
+    RunningCov  = zeros(MySimulation.Model.NumOfParas,MySimulation.Model.NumOfParas)
 
     # Create proposal distribution object for adaptive MH
     ProposalDistribution = ProposalDistributionAdaptiveMH(Density, StepSize, RunningMean, RunningCov)
@@ -124,7 +124,6 @@ CurrentIteration = 1;
 # Initialised flag is false, since geometry not yet initialised
 Initialised = false
 
-
 # Create the chain object
 println("Creating chain object...")
 Chain = MarkovChain( Sampler,
@@ -137,9 +136,9 @@ Chain = MarkovChain( Sampler,
                      AttemptedExchange,
                      AcceptedExchange,
                      ChainGeometry,
-                     ProposalDistribution)
-
-
+                     ProposalDistribution,
+                     )
+                     
 # Initialise the LL and any other quantities needed for the chosen sampler
 MySimulation.UpdateParameters(MySimulation.Model, Chain, MySimulation.Data)
 
@@ -149,62 +148,117 @@ TotalNumOfSamples = MySimulation.NumOfIterations*Chain.NumOfProposals;
 SaveIteration = min(100000, TotalNumOfSamples)
 SavedSamples = Array(Float64, MySimulation.Model.NumOfParas, SaveIteration)
 SavedLL = Array(Float64, SaveIteration)
+SavedAcceptance = Array(Float64,convert(Int64,floor(SaveIteration/100)))
+SavedLocalAcceptance = Array(Float64,convert(Int64,floor(SaveIteration/100)))
+
 ################
 # Main routine #
 ################
 println("Starting main MCMC routine...")
+thstep = 0
+UpdateParametersTime = 0;
+SampleIndicatorsTime = 0;
+TotalTime = time();
 for IterationNum = 1:MySimulation.NumOfIterations
 
     # Keep track of the iteration number within the chain
     Chain.CurrentIteration = IterationNum;
 
     #println(IterationNum)
+    # Propose parameters and caluclate new geometry - Gibbs step 1
+    Chain.ProposalDistribution.StepSize = StepSize
+    UpdateParametersTime += @elapsed MySimulation.UpdateParameters(MySimulation.Model, Chain, MySimulation.Data)
+    SampleIndicatorsTime += @elapsed IndicatorSamples = MySimulation.SampleIndicator(MySimulation.Model, Chain)
 
-    if mod(IterationNum, 100) == 0
-        println(IterationNum)
+    # Sample the indicator variable to select samples - Gibbs step 2
+    # Save the samples
 
-        # Calculate acceptance rate
+    if NumOfProposals == 1
+        # ONLY VALID FOR SINGLE PROPOSAL!
+        if mod(IterationNum,SaveIteration) == 0
+            PartNum = IterationNum/SaveIteration;
+            Idx = SaveIteration
+            SavedSamples[:, Idx] = Chain.Geometry[ IndicatorSamples[1] ].Parameters
+            SavedLL[Idx] =  Chain.Geometry[ IndicatorSamples[1] ].LL
+
+            # Output the results to a file
+            writedlm(string(MySimulation.OutputID, "_Part", PartNum), SavedSamples, ',')
+            writedlm(string(MySimulation.OutputID, "_LL_Part", PartNum), SavedLL, ',')
+            writedlm(string(MySimulation.OutputID, "_Acceptance_Part", PartNum), SavedAcceptance, ',')
+            writedlm(string(MySimulation.OutputID, "_AcceptanceLocal_Part", PartNum), SavedLocalAcceptance, ',')
+    
+            Idx = 1;
+        else
+            Idx = mod(IterationNum, SaveIteration);
+            SavedSamples[:, Idx] = Chain.Geometry[ IndicatorSamples[1] ].Parameters
+            SavedLL[Idx] =  Chain.Geometry[ IndicatorSamples[1] ].LL
+        end
+    else
+        #num of proposals > 1
+        TotalProposals = (IterationNum -1) * NumOfProposals
+        # we are saving a chunk of parameters NumOfProposals * Parameters
+        for i=1:NumOfProposals
+            SavedSamples[: , TotalProposals + i ] = Chain.Geometry[ IndicatorSamples[i] ].Parameters
+            SavedLL[TotalProposals + i] = Chain.Geometry[ IndicatorSamples[i] ].LL
+        end
+    end
+
+    ProposalIteration = IterationNum * NumOfProposals
+
+    if mod(ProposalIteration, 100) == 0
+        println(ProposalIteration)
+        println(string("LL = " , SavedLL[ProposalIteration]))
+        println("Param values ", join(SavedSamples[:,ProposalIteration] , ","))
+        
+        # Calculate global acceptance rate
         Counter = 0;
-        for i = 2:Idx
+        for i = 2:ProposalIteration
             if SavedSamples[:, i] != SavedSamples[:, i-1]
               Counter = Counter + 1;
             end
         end
 
-        # Print acceptance rate
-        println(Counter/(Idx-1))
-        println(string("LL = " , SavedLL[IterationNum-1]))
-        println("Param values ", join(SavedSamples[:,IterationNum-1] , ","))
-    end
+        # Print global acceptance rate
+        thstep+=1
+        SavedAcceptance[thstep] = Counter/(ProposalIteration-1)
+        println(Counter/(ProposalIteration-1))
+        
+        #calculate the local acceptance rate to consider adjusting the stepsize    
+        Counter = 0
+        if thstep == 1
+            SamplesToCompare = 98
+        else
+            SamplesToCompare = 99
+        end
 
-    # Propose parameters and caluclate new geometry - Gibbs step 1
-    MySimulation.UpdateParameters(MySimulation.Model, Chain, MySimulation.Data)
+        for i = ProposalIteration-SamplesToCompare:ProposalIteration
+            if SavedSamples[:, i] != SavedSamples[:, i-1]
+                Counter = Counter + 1;
+            end
+        end
 
-    # Sample the indicator variable to select samples - Gibbs step 2
-    IndicatorSamples = MySimulation.SampleIndicator(MySimulation.Model, Chain)
+        SavedLocalAcceptance[thstep] = Counter/(SamplesToCompare + 1)
 
-    #println(IndicatorSamples)
-    #println(Chain.SampleIndicator)
-
-    # Save the samples
-    # ONLY VALID FOR SINGLE PROPOSAL!
-    if mod(IterationNum,SaveIteration) == 0
-        PartNum = IterationNum/SaveIteration;
-        Idx = SaveIteration
-        SavedSamples[:, Idx] = Chain.Geometry[ IndicatorSamples[1] ].Parameters
-        SavedLL[Idx] =  Chain.Geometry[ IndicatorSamples[1] ].LL
-        println(Chain.Geometry[ IndicatorSamples[1] ].LL)
-
-        # Output the results to a file
-        writedlm(string(MySimulation.OutputID, "_Part", PartNum), SavedSamples, ',')
-        Idx = 1;
-    else
-        Idx = mod(IterationNum, SaveIteration);
-        SavedSamples[:, Idx] = Chain.Geometry[ IndicatorSamples[1] ].Parameters
-        SavedLL[Idx] =  Chain.Geometry[ IndicatorSamples[1] ].LL
+        if(ProposalIteration < ((NumOfProposals * NumOfIterations) / 2))
+            #discard half the intended samples as burnin TODO parameterise this
+            print ("Local Acceptance Rate = ", SavedLocalAcceptance[thstep], "\n")
+            if (SavedLocalAcceptance[thstep] < 0.1)
+                StepSize *= 0.9
+                println("Shrinking StepSize to ", StepSize , "\n")    
+            elseif (SavedLocalAcceptance[thstep] > 0.5)
+                StepSize *= 1.1    
+                println("Increasing StepSize to ", StepSize , "\n")    
+            end
+        end
     end
 end
+TotalTime=time()-TotalTime;
 
+print("Debug times...\n")
+print("Total Time = " , TotalTime,"\n")
+print("UpdateParameters = " , UpdateParametersTime,"\n")
+print("SampleIndicators = " , SampleIndicatorsTime,"\n")
+print("\n\n")
 ########################
 # Post-simulation work #
 ########################
@@ -218,7 +272,10 @@ for i = 1:MySimulation.Model.NumOfParas
 end
 
 
-  # Output the remaining results to a file
-  writedlm(string(MySimulation.OutputID, "_Part_Final"), SavedSamples, ',')
+# Output the remaining results to a file
+writedlm(string(MySimulation.OutputID, "_Part_Final"), SavedSamples, ',')
+writedlm(string(MySimulation.OutputID, "_LL_Part_Final"), SavedLL, ',')
+writedlm(string(MySimulation.OutputID, "_Acceptance_Part_Final"), SavedAcceptance, ',')
+writedlm(string(MySimulation.OutputID, "_AcceptanceLocal_Part_Final"), SavedLocalAcceptance, ',')
 
 end

@@ -34,13 +34,17 @@ include(string(projbasedir,"ion/data/MatlabParser.jl"))
 
 # Define settings for simulation, only MH implemented for models of Type ION
 #Sampler             = "MH"
-Sampler             = "AdaptiveMH"
+Sampler             = "MultMH"
 #Sampler             = "SmMALA"
 #Sampler             = "TrSmMALA"
 
 if Sampler == "MH"
   OutputID            = "$projbasedir/Output/ION_dCK_MH_Output"
   InitialStepSize     = 1 # MH stepsize
+  NumOfIterations     = 15000
+elseif Sampler == "MultMH"
+  OutputID            = "$projbasedir/Output/ION_dCK_MultMH_Output"
+  InitialStepSize     = 0.01 # MH stepsize
   NumOfIterations     = 15000
 elseif Sampler == "AdaptiveMH"
   OutputID            = "$projbasedir/Output/ION_dCK_AdaptiveMH_Output"
@@ -72,7 +76,7 @@ model = CreateModel(AvailableModels.DCK)
 
 #data parsing from MATLAB experimental files
 
-datafile = string(projbasedir,"ion/data/balldata.mat")
+datafile = string(projbasedir,"ion/data/dCK.mat")
 println("Parsing datafile $datafile")
 data = MatlabParser(datafile)
 

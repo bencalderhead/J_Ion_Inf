@@ -194,7 +194,6 @@ type MarkovChain
     Geometry::Array{MarkovChainGeometry}
 
     ProposalDistribution::Any           # Distribution for the proposal
-
 end
 
 
@@ -220,7 +219,6 @@ type MCMCSimulation
     
     # This is a Dictionary which the LLEval function in the model needs to understand
     Data
-
 end
 
 

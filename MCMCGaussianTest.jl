@@ -15,7 +15,7 @@ include("MCMCRun.jl")
 # Define settings for simulation
 OutputID            = "./Output/TestOutputFile_1D"
 Sampler             = "MH"
-NumOfProposals      = 1
+NumOfProposals      = 2
 NumOfIterations     = 5000
 InitialStepSize     = 1.0
 ProposalCovariance  = [1.0]
@@ -39,8 +39,8 @@ ParaNames    = ["a"]
 DefaultParas = [0.0]
 
 UsePrior     = false
-Prior        = Array(PriorDistribution, 1)
-Prior[1]     = PriorDistribution("Uniform", [0, 10])
+Prior        = Array(Distribution, 1)
+Prior[1]     = Uniform(0, 10)
 
 
 # Specify LL function
@@ -53,7 +53,7 @@ end
 
 
 LLFun = LL_Gaussian
-
+data = [0.0]
 
 
 GaussModel = TargetOnlyModel( ModelType,
@@ -64,6 +64,7 @@ GaussModel = TargetOnlyModel( ModelType,
                               UsePrior,
                               Prior,
                               LLFun)
+                              
 
 
 
@@ -80,7 +81,8 @@ MySimulation = MCMCSimulation( OutputID,
                                InitialiseFromPrior,
                                UpdateParasFunction,
                                SampleIndicatorFunction,
-                               GaussModel )
+                               GaussModel,
+                               data )
 
 
 # Run the MCMC code, passing in the MCMCSimulation object
